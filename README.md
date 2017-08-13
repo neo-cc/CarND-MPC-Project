@@ -9,6 +9,70 @@ Self-Driving Car Engineer Nanodegree Program
 
 ![alt text][image1]
 
+#### The Model
+
+This car is using Kinematic Models, which are simplifications of dynamic models that ignore tire forces, gravity, and mass. This simplification reduces the accuracy of the models, but it also makes them more tractable. At low and moderate speeds, kinematic models often approximate the actual vehicle dynamics.
+
+The model has following states and actuators:
+
+* States: x(x\_position), y(y\_position), psi(orientation), v(velocity)
+* Actuators: deltaPsi(steering), a(acceleration)
+
+The update equations for this model are:
+
+```      
+      x[1 + t] = x[t] + v[t] * cos(psi[t]) * dt);
+      y[1 + t] = y[t] + (y[t] + v[t] * sin(psi[t]) * dt);
+      psi[1 + t] = psi[t] + v[t] * delta[t] / Lf * dt);
+      v[1 + t] = v[t] + a[t] * dt;
+      cte[1 + t] = cte[t] - y[t] + v[t] * sin(epsi[t]) * dt;
+      epsi[1 + t] = epsi[t] - psides[t] + v[t] * delta[t] / Lf * dt);
+```
+
+#### Timestep Length and Elapsed Duration (N & dt)
+
+In the end, I set the timestep N=11 and dt=0.125s. The car can successfully drive a lap around the track with max speed 94 MPH as shown in the above picture.  
+
+I also tried with other parameters for N and dt: 
+
+* When fixed with dt=0.125s, if I set N=20, the car failed to stay on the track at high speed even with slightly turn. If I set N=5, the car always oscillate on the road and cannot drive in a stable state.
+* When fixed with N=11, if I set dt=0.1s, the car still oscillates on the road and cannot deal with Latency very well. If I set dt=0.2s or large, the car can drive safely but it is too conservative and cannot reach high speed. 
+
+#### Polynomial Fitting and MPC Preprocessing
+
+I am using 2nd order polynomial fit. The waypoints are first converted to vehicle space parametes and then fit to the path. The x position, y position and car orientation are set to 0 for the initial state and these are fed into the MPC solve function.
+
+MPC prodict the N states and N-1 actuaors with a cost function as follows:
+
+	// The part of the cost based on the reference state.
+    for (int t = 0; t < N; t++) {
+      fg[0] += 2000 * CppAD::pow(vars[cte_start + t] , 2);
+      fg[0] += 1000 * CppAD::pow(vars[epsi_start + t], 2);
+      fg[0] += CppAD::pow(vars[v_start + t] - ref_v, 2);
+    }
+    
+    // Minimize the use of actuators.
+    for (int t = 0; t < N - 1; t++) {
+      fg[0] += 100 * CppAD::pow(vars[deltaPsi_start + t], 2);
+      fg[0] += CppAD::pow(vars[a_start + t], 2);
+    }
+    
+    // Minimize the value gap between sequential actuations.
+    for (int t = 0; t < N - 2; t++) {
+      fg[0] += CppAD::pow(vars[deltaPsi_start + t + 1] - vars[deltaPsi_start + t], 2);
+      fg[0] += CppAD::pow(vars[a_start + t + 1] - vars[a_start + t], 2);
+    }
+  
+* To smooth driving, I added weights(2000 and 1000)for cte and epsi. 
+* To minimize the steering, I add weight(100) for deltaPsi. 
+
+#### Model Predictive Control with Latency
+
+0.1 second latency in introduced into this system in order to simulate real-life environment. To compensate this error, first I used the weights to smooth steering actuator and increased the penalty of cost to use steering, second I tried to adjust N and dt so that it can predict more on the road. Both of them can help to drive the car more conservatively and finally the car can drive through the entire track successfully. 
+
+
+    
+
 ## Dependencies
 
 * cmake >= 3.5
