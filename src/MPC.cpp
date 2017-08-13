@@ -248,8 +248,7 @@ MPC_SOL MPC::Solve(Eigen::VectorXd state, Eigen::VectorXd coeffs) {
   // creates a 2 element double vector.
   
   MPC_SOL result;
-  for (auto i = 0; i < N-1 ; i++){
-    cout << i << ": " << "solution.x[x_start+i]: " << solution.x[x_start+i] << "solution.x[y_start+i]: " << solution.x[y_start+i] << endl;
+  for (auto i = 0; i < N ; i++){
     result.x.push_back(solution.x[x_start+i]);
     result.y.push_back(solution.x[y_start+i]);
     result.delta.push_back(solution.x[deltaPsi_start+i]);
