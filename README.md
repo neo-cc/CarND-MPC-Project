@@ -31,30 +31,36 @@ The update equations for this model are:
 
 #### Timestep Length and Elapsed Duration (N & dt)
 
-In the end, I set the timestep N=11 and dt=0.125s. The car can successfully drive a lap around the track with max speed 94 MPH as shown in the above picture.  
+In the end, I set the timestep `N=11` and `dt=0.05s`. The car can successfully drive a lap around the track with average speed `60MPH` as shown in the above picture.  
 
 I also tried with other parameters for N and dt: 
 
-* When fixed with dt=0.125s, if I set N=20, the car failed to stay on the track at high speed even with slightly turn. If I set N=5, the car always oscillate on the road and cannot drive in a stable state.
-* When fixed with N=11, if I set dt=0.1s, the car still oscillates on the road and cannot deal with Latency very well. If I set dt=0.2s or large, the car can drive safely but it is too conservative and cannot reach high speed. 
+* When fixed with dt=0.05s, if I set N to larger number such as 20, the car failed to stay on the track at high speed even with slightly turn. If I set N=5, the car always oscillate on the road and cannot drive in a stable state.
+* When fixed with N=11, if I set dt to larger value such as 0.1s, the car still oscillates on the road and cannot deal with Latency very well.  
 
 #### Polynomial Fitting and MPC Preprocessing
 
-I am using 2nd order polynomial fit. The waypoints are first converted to vehicle space parametes and then fit to the path. The x position, y position and car orientation are set to 0 for the initial state and these are fed into the MPC solve function.
+I am using 2nd order polynomial fit. I also tried with 3rd order polynomial fit but it didn't provide better result than 2nd order fit. 
+
+      // 2nd order polynomial fit
+      f0 = coeffs[0] + coeffs[1] * x0 + coeffs[2] * pow(x0, 2);
+      psides0 = atan(coeffs[1] + 2 * coeffs[2] * x0);
+
+The waypoints are first converted to vehicle space parametes and then fit to the path. The x position, y position and car orientation are set to 0 for the initial state and these are fed into the MPC solve function.
 
 MPC prodict the N states and N-1 actuaors with a cost function as follows:
 
-	// The part of the cost based on the reference state.
+    // The part of the cost based on the reference state.
     for (int t = 0; t < N; t++) {
-      fg[0] += 2000 * CppAD::pow(vars[cte_start + t] , 2);
-      fg[0] += 1000 * CppAD::pow(vars[epsi_start + t], 2);
+      fg[0] += 10*CppAD::pow(vars[cte_start + t] , 2);        // add weight to minimize the CTE
+      fg[0] += CppAD::pow(vars[epsi_start + t], 2);
       fg[0] += CppAD::pow(vars[v_start + t] - ref_v, 2);
     }
     
     // Minimize the use of actuators.
     for (int t = 0; t < N - 1; t++) {
-      fg[0] += 100 * CppAD::pow(vars[deltaPsi_start + t], 2);
-      fg[0] += CppAD::pow(vars[a_start + t], 2);
+      fg[0] += 10000*CppAD::pow(vars[deltaPsi_start + t], 2); // add weight to minize the use of deltaPsi
+      fg[0] += 30*CppAD::pow(vars[a_start + t], 2);           // add weight to reduce speed to 60mph
     }
     
     // Minimize the value gap between sequential actuations.
@@ -63,15 +69,36 @@ MPC prodict the N states and N-1 actuaors with a cost function as follows:
       fg[0] += CppAD::pow(vars[a_start + t + 1] - vars[a_start + t], 2);
     }
   
-* To smooth driving, I added weights(2000 and 1000)for cte and epsi. 
-* To minimize the steering, I add weight(100) for deltaPsi. 
+* To make sure the CTE as small as possible so the car always close to center, I added `weight=10` for cte.
+* To minimize the use of steering so the car do not oscillate on the track, I add `weight=10000` for deltaPsi. 
+* To make sure the car is in a stable state, I added `weight=30` to slow down the car to 60mph, not reaching the ref_v=100mph. 
 
 #### Model Predictive Control with Latency
 
-0.1 second latency in introduced into this system in order to simulate real-life environment. To compensate this error, first I used the weights to smooth steering actuator and increased the penalty of cost to use steering, second I tried to adjust N and dt so that it can predict more on the road. Both of them can help to drive the car more conservatively and finally the car can drive through the entire track successfully. 
+0.1 second latency in introduced into this system in order to simulate real-life environment. 
 
+To compensate this error, first I added the `latency_step=2` (0.1s/dt) and fixed the steering and acceleration during this latency time. 
 
-    
+```
+  // do not change steering during latency
+  for (int i = deltaPsi_start; i < deltaPsi_start + latency_step; i++) {
+    vars_lowerbound[i] = delta_;
+    vars_upperbound[i] = delta_;
+  }
+  
+    // do not change acceleration during latency
+  for (int i = a_start; i < a_start + latency_step; i++) {
+    vars_lowerbound[i] = a_;
+    vars_upperbound[i] = a_;
+  }
+``` 
+Second I only used the steering and acceleration value at the latency time. 
+ 
+```  
+  delta_ = solution.x[deltaPsi_start + latency_step];
+  a_ = solution.x[a_start + latency_step];
+```
+In the end, the car is able to compensate the system 100ms latency and can successfully drive through the track with average speed of 60MPH. 
 
 ## Dependencies
 
