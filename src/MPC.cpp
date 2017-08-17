@@ -7,7 +7,13 @@ using CppAD::AD;
 
 // Set the timestep length and duration
 size_t N = 11 ;
-double dt = 0.125 ;
+double dt = 0.05 ;
+const int latency_step = 2;   // to compensate system latency
+
+
+double delta_ = 0;
+double a_ = 0;
+
 
 // This value assumes the model presented in the classroom is used.
 //
@@ -48,15 +54,15 @@ class FG_eval {
     
     // The part of the cost based on the reference state.
     for (int t = 0; t < N; t++) {
-      fg[0] += 2000 * CppAD::pow(vars[cte_start + t] , 2);
-      fg[0] += 1000 * CppAD::pow(vars[epsi_start + t], 2);
+      fg[0] += 10*CppAD::pow(vars[cte_start + t] , 2);        // add weight to minimize the CTE
+      fg[0] += CppAD::pow(vars[epsi_start + t], 2);
       fg[0] += CppAD::pow(vars[v_start + t] - ref_v, 2);
     }
     
     // Minimize the use of actuators.
     for (int t = 0; t < N - 1; t++) {
-      fg[0] += 100 * CppAD::pow(vars[deltaPsi_start + t], 2);
-      fg[0] += CppAD::pow(vars[a_start + t], 2);
+      fg[0] += 10000*CppAD::pow(vars[deltaPsi_start + t], 2); // add weight to minize the use of deltaPsi
+      fg[0] += 30*CppAD::pow(vars[a_start + t], 2);           // add weight to reduce speed to 60mph
     }
     
     // Minimize the value gap between sequential actuations.
@@ -164,8 +170,8 @@ MPC_SOL MPC::Solve(Eigen::VectorXd state, Eigen::VectorXd coeffs) {
   // Set lower and upper limits for variables.
   
   for (int i = 0; i < deltaPsi_start; i++) {
-    vars_lowerbound[i] = -1 * 1.0e10;
-    vars_upperbound[i] = 1.0e10;
+    vars_lowerbound[i] = -1 * 1.0e19;
+    vars_upperbound[i] = 1.0e19;
   }
   
   // steering angle: [-25, 25] in radians
@@ -174,10 +180,22 @@ MPC_SOL MPC::Solve(Eigen::VectorXd state, Eigen::VectorXd coeffs) {
     vars_upperbound[i] = 0.436332;
   }
   
+  // do not change steering during latency
+  for (int i = deltaPsi_start; i < deltaPsi_start + latency_step; i++) {
+    vars_lowerbound[i] = delta_;
+    vars_upperbound[i] = delta_;
+  }
+  
   // acceleration: [-1, 1]
   for (int i = a_start; i < n_vars; i++) {
     vars_lowerbound[i] = -1.0;
     vars_upperbound[i] = 1.0;
+  }
+  
+  // do not change acceleration during latency
+  for (int i = a_start; i < a_start + latency_step; i++) {
+    vars_lowerbound[i] = a_;
+    vars_upperbound[i] = a_;
   }
   
 
@@ -248,12 +266,23 @@ MPC_SOL MPC::Solve(Eigen::VectorXd state, Eigen::VectorXd coeffs) {
   // creates a 2 element double vector.
   
   MPC_SOL result;
-  for (auto i = 0; i < N ; i++){
-    result.x.push_back(solution.x[x_start+i]);
-    result.y.push_back(solution.x[y_start+i]);
-    result.delta.push_back(solution.x[deltaPsi_start+i]);
-    result.a.push_back(solution.x[a_start+i]);
+  for (auto i = 0; i < N-latency_step ; i++){
+    result.x.push_back(solution.x[x_start+i+latency_step]);
+    result.y.push_back(solution.x[y_start+i+latency_step]);
+    result.delta.push_back(solution.x[deltaPsi_start+i+latency_step]);
+    result.a.push_back(solution.x[a_start+i+latency_step]);
   }
+  
+  delta_ = solution.x[deltaPsi_start + latency_step];
+  a_ = solution.x[a_start + latency_step];
+  
+//  delta_ = solution.x[deltaPsi_start];
+//  a_ = solution.x[a_start];
+  
+  
+  cout << "delta_ = "<< delta_ << "  a_ = " << a_ << endl;
+  cout << "latency_step = " << latency_step << endl;
+  
   
 
   return result;

@@ -114,14 +114,14 @@ int main() {
           
           // calculate errors
           double cte = polyeval(coeff, 0);
-          double epsi = atan(coeff(1)); // most of poly function is zero due to px=0
+          double epsi = -atan(coeff(1)); // most of poly function is zero due to px=0
           
           Eigen::VectorXd state_vec(6);
           state_vec << 0, 0, 0, v, cte, epsi;
           
           MPC_SOL mpc_result = mpc.Solve(state_vec, coeff);
 
-          steer_value = -mpc_result.delta[0];
+          steer_value = -mpc_result.delta[0]/0.436332;
           throttle_value = mpc_result.a[0];
           std::cout << "steer_value = " << steer_value << " throttle_value = " << throttle_value << std::endl;
           
@@ -155,8 +155,8 @@ int main() {
           
           int N = 11;
           
-          for (int i = 0; i < N; i++) {
-            next_x_vals.push_back(i*5);
+          for (int i = 1; i < N; i++) {
+            next_x_vals.push_back(i*5);   // 5=~2*Lf
             next_y_vals.push_back(polyeval(coeff, i*5));
           }
           
